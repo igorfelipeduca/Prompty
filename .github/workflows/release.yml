@@ -74,27 +74,33 @@ jobs:
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          set +e
           APP_PATH="build/Build/Products/Release/Prompty.app"
           ditto -c -k --keepParent "$APP_PATH" Prompty-notarize.zip
 
-          SUBMISSION_OUTPUT=$(xcrun notarytool submit Prompty-notarize.zip \
+          xcrun notarytool submit Prompty-notarize.zip \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_ID_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
-            --wait 2>&1)
+            --wait 2>&1 | tee notarize-output.log
+          SUBMIT_EXIT=${PIPESTATUS[0]}
 
-          echo "$SUBMISSION_OUTPUT"
+          SUBMISSION_ID=$(grep "id:" notarize-output.log | head -1 | awk '{print $2}')
+          echo "Submission ID: $SUBMISSION_ID"
+          echo "Submit exit code: $SUBMIT_EXIT"
 
-          SUBMISSION_ID=$(echo "$SUBMISSION_OUTPUT" | grep "id:" | head -1 | awk '{print $2}')
-
-          if echo "$SUBMISSION_OUTPUT" | grep -q "status: Accepted"; then
-            echo "Notarization successful!"
-          else
-            echo "Notarization failed. Fetching log..."
+          if [ -n "$SUBMISSION_ID" ]; then
+            echo "Fetching notary log..."
             xcrun notarytool log "$SUBMISSION_ID" \
               --apple-id "$APPLE_ID" \
               --password "$APPLE_ID_PASSWORD" \
-              --team-id "$APPLE_TEAM_ID"
+              --team-id "$APPLE_TEAM_ID" || true
+          fi
+
+          if grep -q "status: Accepted" notarize-output.log; then
+            echo "Notarization successful!"
+          else
+            echo "Notarization failed."
             exit 1
           fi
 
